@@ -1103,14 +1103,12 @@
                 exportType = 'combined';
                 combinedOption.classList.add('active');
                 separateOption.classList.remove('active');
-                showStatus('Export mode: Combined into one file', 'success');
             });
             
             separateOption.addEventListener('click', () => {
                 exportType = 'separate';
                 separateOption.classList.add('active');
                 combinedOption.classList.remove('active');
-                showStatus('Export mode: Separate files', 'success');
             });
             
             // Apply deobfuscation presets
@@ -1185,19 +1183,13 @@
                 compiledHTML = '';
                 websiteResources = [];
                 updateNavigationButtons();
-                showStatus('Cleared all content', 'success');
             }
             
             // Copy to clipboard
             function copyToClipboard() {
-                if (!fetchedContent && allFiles.length === 0) {
-                    showStatus('No content to copy', 'error');
-                    return;
-                }
+                if (!fetchedContent) return;
                 
-                const contentToCopy = allFiles[currentFileIndex]?.content || fetchedContent;
-                
-                navigator.clipboard.writeText(contentToCopy).then(() => {
+                navigator.clipboard.writeText(fetchedContent).then(() => {
                     showStatus('Code copied to clipboard!', 'success');
                 }).catch(err => {
                     showStatus('Failed to copy: ' + err, 'error');
@@ -1206,16 +1198,9 @@
             
             // Show status message
             function showStatus(message, type) {
-                const statusDiv = document.createElement('div');
-                statusDiv.className = type;
-                statusDiv.innerHTML = `<i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'}"></i> ${message}`;
-                statusMessage.innerHTML = '';
-                statusMessage.appendChild(statusDiv);
+                statusMessage.innerHTML = `<div class="${type}">${message}</div>`;
                 setTimeout(() => {
-                    statusDiv.style.opacity = '0';
-                    setTimeout(() => {
-                        statusDiv.remove();
-                    }, 300);
+                    statusMessage.innerHTML = '';
                 }, 5000);
             }
             
@@ -1259,6 +1244,45 @@
                        extension === 'json' ? 'json' : 'file';
             }
             
+            // Apply syntax highlighting
+            function applySyntaxHighlighting(content, extension) {
+                // In a real application, use a library like Prism.js for better highlighting
+                // This is a simplified version for demonstration
+                
+                let highlighted = content;
+                
+                // JavaScript highlighting
+                if (extension === 'js') {
+                    highlighted = highlighted
+                        .replace(/(\/\/.*)/g, '<span class="comment">$1</span>')
+                        .replace(/\b(function|var|let|const|if|else|for|while|return|class|export|import|from|this)\b/g, '<span class="keyword">$1</span>')
+                        .replace(/\b(true|false|null|undefined)\b/g, '<span class="constant">$1</span>')
+                        .replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>')
+                        .replace(/(["'`])(?:(?=(\\?))\2.)*?\1/g, '<span class="string">$&</span>');
+                }
+                
+                // HTML highlighting
+                if (extension === 'html') {
+                    highlighted = highlighted
+                        .replace(/&lt;!--[\s\S]*?--&gt;/g, '<span class="comment">$&</span>')
+                        .replace(/&lt;([\w\-:]+)/g, '&lt;<span class="keyword">$1</span>')
+                        .replace(/&lt;\/[\w\-:]+&gt;/g, '&lt;/<span class="keyword">$1</span>')
+                        .replace(/(\w+)=("|')(.*?)\2/g, '<span class="constant">$1</span>=$2$3$2')
+                        .replace(/&lt;!DOCTYPE\s+html&gt;/gi, '<span class="doctype">$&</span>');
+                }
+                
+                // CSS highlighting
+                if (extension === 'css') {
+                    highlighted = highlighted
+                        .replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="comment">$1</span>')
+                        .replace(/([\w-]+)\s*:/g, '<span class="constant">$1</span>:')
+                        .replace(/#([a-f0-9]{3,6})\b/gi, '<span class="string">#$1</span>')
+                        .replace(/(\d+\.?\d*)(px|em|rem|%|s)/g, '<span class="number">$1$2</span>');
+                }
+                
+                return highlighted;
+            }
+            
             // Fetch code from URL
             async function fetchCode() {
                 const url = urlInput.value.trim();
@@ -1280,27 +1304,30 @@
                 websiteResources = [];
                 
                 // Get configuration values
-                const maxFiles = Math.min(256, Math.max(1, parseInt(maxFilesInput.value) || 256);
-                const maxFolders = Math.min(30, Math.max(1, parseInt(maxFoldersInput.value) || 15);
+                const maxFiles = parseInt(maxFilesInput.value) || 256;
+                const maxFolders = parseInt(maxFoldersInput.value) || 15;
+                
+                if (maxFiles < 1 || maxFiles > 256) {
+                    showStatus('Max files must be between 1 and 256', 'error');
+                    return;
+                }
+                
+                if (maxFolders < 1 || maxFolders > 30) {
+                    showStatus('Max folders must be between 1 and 30', 'error');
+                    return;
+                }
                 
                 // Check if it's a GitHub repo URL
                 isGitHubRepo = url.includes('github.com') && 
                               !url.includes('raw.githubusercontent.com') && 
                               url.split('/').length >= 5;
                 
-                try {
-                    if (isGitHubRepo) {
-                        githubOptions.style.display = 'flex';
-                        await processGitHubRepo(url, maxFiles, maxFolders);
-                    } else {
-                        githubOptions.style.display = 'none';
-                        await processWebsite(url);
-                    }
-                } catch (error) {
-                    console.error('Processing error:', error);
-                    showStatus(`Error: ${error.message}`, 'error');
-                    spinner.style.display = 'none';
-                    fetchBtn.disabled = false;
+                if (isGitHubRepo) {
+                    githubOptions.style.display = 'flex';
+                    await processGitHubRepo(url, maxFiles, maxFolders);
+                } else {
+                    githubOptions.style.display = 'none';
+                    await processWebsite(url);
                 }
             }
             
@@ -1314,11 +1341,7 @@
                 fetchedContent = '';
                 
                 try {
-                    const response = await fetch(url, {
-                        headers: {
-                            'Accept': 'text/html'
-                        }
-                    });
+                    const response = await fetch(url);
                     
                     if (!response.ok) {
                         throw new Error(`HTTP error! Status: ${response.status}`);
@@ -1347,7 +1370,6 @@
                     // Display file info
                     displayFile(0);
                     statusText.textContent = 'Website content fetched successfully!';
-                    showStatus('Successfully fetched website content', 'success');
                     
                 } catch (error) {
                     console.error('Fetch error:', error);
@@ -1375,18 +1397,12 @@
                     ];
                     
                     statusText.textContent = `Found ${resources.length} resources to process...`;
-                    progressContainer.style.display = 'block';
-                    progressBar.style.width = '0%';
                     
                     // Process each resource
-                    for (let i = 0; i < resources.length; i++) {
-                        const resource = resources[i];
+                    for (const resource of resources) {
                         const resourceUrl = new URL(resource.src || resource.href, url).href;
                         
                         try {
-                            progressText.textContent = `${i+1}/${resources.length}`;
-                            progressBar.style.width = `${((i+1)/resources.length)*100}%`;
-                            
                             const resourceResponse = await fetch(resourceUrl);
                             if (!resourceResponse.ok) continue;
                             
@@ -1402,19 +1418,18 @@
                                 type: extension
                             });
                             
+                            showStatus(`Fetched resource: ${resourceName}`, 'success');
+                            
                         } catch (error) {
                             console.error(`Error fetching resource: ${resourceUrl}`, error);
                         }
                     }
                     
                     statusText.textContent = `Processed ${websiteResources.length} resources`;
-                    showStatus(`Fetched ${websiteResources.length - 1} resources`, 'success');
                     
                 } catch (error) {
                     console.error('Resource processing error:', error);
                     showStatus(`Error processing resources: ${error.message}`, 'error');
-                } finally {
-                    progressContainer.style.display = 'none';
                 }
             }
             
@@ -1463,9 +1478,8 @@
                     progressText.textContent = `0/${allFiles.length}`;
                     totalFilesSpan.textContent = allFiles.length;
                     
-                    // Process files
-                    await processNextGitHubFile();
-                    
+                    // Process first file
+                    processNextGitHubFile();
                 } catch (error) {
                     console.error('GitHub error:', error);
                     showStatus(`Error processing repository: ${error.message}`, 'error');
@@ -1482,9 +1496,7 @@
                     // All files processed
                     spinner.style.display = 'none';
                     fetchBtn.disabled = false;
-                    progressContainer.style.display = 'none';
                     statusText.textContent = 'Repository processing completed!';
-                    showStatus('Successfully processed all files', 'success');
                     displayFile(0);
                     return;
                 }
@@ -1515,21 +1527,21 @@
                     
                     // Move to next file
                     currentFileIndex++;
-                    await processNextGitHubFile();
+                    processNextGitHubFile();
                     
                 } catch (error) {
                     console.error('File processing error:', error);
                     showStatus(`Error processing file: ${error.message}`, 'error');
                     // Move to next file even if error
                     currentFileIndex++;
-                    await processNextGitHubFile();
+                    processNextGitHubFile();
                 }
             }
             
             // Display file structure
             function displayFileStructure(files) {
                 fileList.innerHTML = '';
-                files.forEach((file, index) => {
+                files.forEach(file => {
                     const extension = getFileExtension(file.path);
                     const iconClass = getFileIconClass(extension);
                     
@@ -1540,7 +1552,6 @@
                         <span>${file.path}</span>
                         <span class="badge badge-success">${extension.toUpperCase()}</span>
                     `;
-                    fileElement.addEventListener('click', () => navigateToFile(index));
                     fileList.appendChild(fileElement);
                 });
             }
@@ -1593,21 +1604,17 @@
             
             // Update navigation buttons state
             function updateNavigationButtons() {
-                const hasFiles = allFiles.length > 0;
-                prevBtn.disabled = currentFileIndex <= 0 || !hasFiles;
-                nextBtn.disabled = currentFileIndex >= allFiles.length - 1 || !hasFiles;
-                prevBtn2.disabled = currentFileIndex <= 0 || !hasFiles;
-                nextBtn2.disabled = currentFileIndex >= allFiles.length - 1 || !hasFiles;
-                firstBtn.disabled = currentFileIndex <= 0 || !hasFiles;
-                lastBtn.disabled = currentFileIndex >= allFiles.length - 1 || !hasFiles;
+                prevBtn.disabled = currentFileIndex <= 0;
+                nextBtn.disabled = currentFileIndex >= allFiles.length - 1;
+                prevBtn2.disabled = currentFileIndex <= 0;
+                nextBtn2.disabled = currentFileIndex >= allFiles.length - 1;
+                firstBtn.disabled = currentFileIndex <= 0;
+                lastBtn.disabled = currentFileIndex >= allFiles.length - 1;
             }
             
             // Deobfuscate code
             function deobfuscateCode() {
-                if (allFiles.length === 0) {
-                    showStatus('No files to deobfuscate', 'error');
-                    return;
-                }
+                if (!fetchedContent) return;
                 
                 try {
                     // Show loading
@@ -1615,8 +1622,9 @@
                     deobfuscateBtn.disabled = true;
                     statusText.textContent = 'Deobfuscating code...';
                     
-                    // Simulate deobfuscation process (in a real app, this would call an API)
+                    // Simulate deobfuscation process
                     setTimeout(() => {
+                        // This is a simulation - in a real app, you would call an API
                         const originalContent = allFiles[currentFileIndex].content;
                         let deobfuscated = originalContent;
                         
@@ -1667,11 +1675,6 @@
             
             // View as HTML
             function viewAsHTML() {
-                if (allFiles.length === 0 && websiteResources.length === 0) {
-                    showStatus('No content to view', 'error');
-                    return;
-                }
-                
                 try {
                     // Show loading
                     spinner.style.display = 'inline-block';
@@ -1711,11 +1714,6 @@
             
             // Export to HTML
             function exportToHTML() {
-                if (allFiles.length === 0 && websiteResources.length === 0) {
-                    showStatus('No content to export', 'error');
-                    return;
-                }
-                
                 try {
                     // Show loading
                     spinner.style.display = 'inline-block';
@@ -1773,6 +1771,144 @@
             
             // Generate HTML for GitHub export
             function generateGitHubExportHTML() {
+                if (exportType === 'separate') {
+                    return generateSeparateFilesHTML();
+                }
+                
+                let html = `
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>GitHub Repository Export</title>
+                        <style>
+                            body {
+                                font-family: 'Segoe UI', system-ui, sans-serif;
+                                background: #0d1117;
+                                color: #c9d1d9;
+                                line-height: 1.6;
+                                padding: 2rem;
+                                max-width: 1200px;
+                                margin: 0 auto;
+                            }
+                            header {
+                                text-align: center;
+                                padding: 2rem 0;
+                                margin-bottom: 2rem;
+                                border-bottom: 1px solid #30363d;
+                            }
+                            h1 {
+                                font-size: 2.5rem;
+                                margin-bottom: 0.5rem;
+                                background: linear-gradient(90deg, #2ea043 0%, #3fb950 100%);
+                                -webkit-background-clip: text;
+                                -webkit-text-fill-color: transparent;
+                            }
+                            .file-list {
+                                margin-bottom: 2rem;
+                            }
+                            .file-item {
+                                background: #161b22;
+                                border: 1px solid #30363d;
+                                border-radius: 6px;
+                                padding: 1rem;
+                                margin-bottom: 1rem;
+                            }
+                            .file-header {
+                                display: flex;
+                                align-items: center;
+                                gap: 0.5rem;
+                                margin-bottom: 0.5rem;
+                                padding-bottom: 0.5rem;
+                                border-bottom: 1px solid #30363d;
+                            }
+                            .file-content {
+                                background: #010409;
+                                border: 1px solid #30363d;
+                                border-radius: 6px;
+                                padding: 1rem;
+                                overflow: auto;
+                            }
+                            pre {
+                                white-space: pre-wrap;
+                                font-family: 'Fira Code', 'Consolas', monospace;
+                                font-size: 1rem;
+                                line-height: 1.7;
+                            }
+                            .stats {
+                                display: flex;
+                                gap: 1rem;
+                                margin-bottom: 1.5rem;
+                                flex-wrap: wrap;
+                            }
+                            .stat-card {
+                                background: #161b22;
+                                border: 1px solid #30363d;
+                                border-radius: 8px;
+                                padding: 1rem;
+                                flex: 1;
+                                min-width: 200px;
+                                text-align: center;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <header>
+                            <h1>GitHub Repository Export</h1>
+                            <p>Source: ${currentUrl}</p>
+                            <p>Generated: ${new Date().toLocaleString()}</p>
+                        </header>
+                        
+                        <div class="stats">
+                            <div class="stat-card">
+                                <h3><i class="fas fa-folder"></i> Folders</h3>
+                                <p>${calculateFolderCount(allFiles)}</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3><i class="fas fa-file"></i> Files</h3>
+                                <p>${allFiles.length}</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3><i class="fas fa-code"></i> Lines of Code</h3>
+                                <p>${calculateTotalLines(allFiles)}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="file-list">
+                `;
+                
+                allFiles.forEach(file => {
+                    const extension = getFileExtension(file.path);
+                    
+                    html += `
+                        <div class="file-item">
+                            <div class="file-header">
+                                <i class="fas fa-file-${extension === 'js' ? 'code' : (extension === 'html' ? 'code' : '')}"></i>
+                                <h2>${file.path}</h2>
+                                <span class="badge">${extension.toUpperCase()}</span>
+                            </div>
+                            <div class="file-content">
+                                <pre>${escapeHTML(file.content)}</pre>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                        <footer style="margin-top: 3rem; text-align: center; color: #8b949e; font-size: 0.9rem;">
+                            <p>This file was generated for educational purposes only. Always respect copyright laws.</p>
+                        </footer>
+                    </body>
+                    </html>
+                `;
+                
+                return html;
+            }
+            
+            // Generate HTML for separate files export
+            function generateSeparateFilesHTML() {
                 let html = `
                     <!DOCTYPE html>
                     <html lang="en">
@@ -1931,6 +2067,142 @@
             
             // Generate HTML for website export
             function generateWebsiteExportHTML() {
+                if (exportType === 'separate') {
+                    return generateSeparateWebsiteFilesHTML();
+                }
+                
+                let html = `
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Website Source Export</title>
+                        <style>
+                            body {
+                                font-family: 'Segoe UI', system-ui, sans-serif;
+                                background: #0d1117;
+                                color: #c9d1d9;
+                                line-height: 1.6;
+                                padding: 2rem;
+                                max-width: 1200px;
+                                margin: 0 auto;
+                            }
+                            header {
+                                text-align: center;
+                                padding: 2rem 0;
+                                margin-bottom: 2rem;
+                                border-bottom: 1px solid #30363d;
+                            }
+                            h1 {
+                                font-size: 2.5rem;
+                                margin-bottom: 0.5rem;
+                                background: linear-gradient(90deg, #2ea043 0%, #3fb950 100%);
+                                -webkit-background-clip: text;
+                                -webkit-text-fill-color: transparent;
+                            }
+                            .resource-list {
+                                margin-bottom: 2rem;
+                            }
+                            .resource-item {
+                                background: #161b22;
+                                border: 1px solid #30363d;
+                                border-radius: 6px;
+                                padding: 1rem;
+                                margin-bottom: 1rem;
+                            }
+                            .resource-header {
+                                display: flex;
+                                align-items: center;
+                                gap: 0.5rem;
+                                margin-bottom: 0.5rem;
+                                padding-bottom: 0.5rem;
+                                border-bottom: 1px solid #30363d;
+                            }
+                            .resource-content {
+                                background: #010409;
+                                border: 1px solid #30363d;
+                                border-radius: 6px;
+                                padding: 1rem;
+                                overflow: auto;
+                            }
+                            pre {
+                                white-space: pre-wrap;
+                                font-family: 'Fira Code', 'Consolas', monospace;
+                                font-size: 1rem;
+                                line-height: 1.7;
+                            }
+                            .stats {
+                                display: flex;
+                                gap: 1rem;
+                                margin-bottom: 1.5rem;
+                                flex-wrap: wrap;
+                            }
+                            .stat-card {
+                                background: #161b22;
+                                border: 1px solid #30363d;
+                                border-radius: 8px;
+                                padding: 1rem;
+                                flex: 1;
+                                min-width: 200px;
+                                text-align: center;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <header>
+                            <h1>Website Source Export</h1>
+                            <p>Source: ${currentUrl}</p>
+                            <p>Generated: ${new Date().toLocaleString()}</p>
+                        </header>
+                        
+                        <div class="stats">
+                            <div class="stat-card">
+                                <h3><i class="fas fa-file"></i> Files</h3>
+                                <p>${websiteResources.length}</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3><i class="fas fa-code"></i> Lines of Code</h3>
+                                <p>${calculateWebsiteTotalLines(websiteResources)}</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3><i class="fas fa-database"></i> Total Size</h3>
+                                <p>${(websiteResources.reduce((sum, res) => sum + res.size, 0) / 1024).toFixed(2)} KB</p>
+                            </div>
+                        </div>
+                        
+                        <div class="resource-list">
+                `;
+                
+                websiteResources.forEach(resource => {
+                    html += `
+                        <div class="resource-item">
+                            <div class="resource-header">
+                                <i class="fas fa-file-${resource.type === 'js' ? 'code' : (resource.type === 'css' ? 'code' : '')}"></i>
+                                <h2>${resource.path}</h2>
+                                <span class="badge">${resource.type.toUpperCase()}</span>
+                            </div>
+                            <div class="resource-content">
+                                <pre>${escapeHTML(resource.content)}</pre>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                        <footer style="margin-top: 3rem; text-align: center; color: #8b949e; font-size: 0.9rem;">
+                            <p>This file was generated for educational purposes only. Always respect copyright laws.</p>
+                        </footer>
+                    </body>
+                    </html>
+                `;
+                
+                return html;
+            }
+            
+            // Generate HTML for separate website files export
+            function generateSeparateWebsiteFilesHTML() {
                 let html = `
                     <!DOCTYPE html>
                     <html lang="en">
